@@ -4,11 +4,11 @@
 
 #include "cinderx/Common/log.h"
 #include "cinderx/Common/util.h"
+#include "cinderx/Jit/codegen/arch/register_set.h"
 
 #include <fmt/format.h>
 
 #include <array>
-#include <bit>
 #include <string>
 #include <string_view>
 
@@ -199,95 +199,7 @@ FOREACH_VECD(DEFINE_PHY_VECD_REG)
 #undef DEFINE_PHY_GP_REG
 #undef DEFINE_PHY_VECD_REG
 
-class PhyRegisterSet {
- public:
-  constexpr PhyRegisterSet() = default;
-  explicit constexpr PhyRegisterSet(PhyLocation r) : rs_{1U << r.loc} {}
-
-  constexpr PhyRegisterSet operator|(PhyLocation reg) const {
-    PhyRegisterSet set;
-    set.rs_ = rs_ | (1U << reg.loc);
-    return set;
-  }
-
-  constexpr PhyRegisterSet operator|(const PhyRegisterSet& rs) const {
-    PhyRegisterSet res;
-    res.rs_ = rs_ | rs.rs_;
-    return res;
-  }
-
-  PhyRegisterSet& operator|=(const PhyRegisterSet& rs) {
-    rs_ |= rs.rs_;
-    return *this;
-  }
-
-  constexpr PhyRegisterSet operator-(PhyLocation rs) const {
-    return operator-(PhyRegisterSet(rs));
-  }
-
-  constexpr PhyRegisterSet operator-(PhyRegisterSet rs) const {
-    PhyRegisterSet set;
-    set.rs_ = rs_ & ~(rs.rs_);
-    return set;
-  }
-
-  constexpr PhyRegisterSet operator&(PhyRegisterSet rs) const {
-    PhyRegisterSet set;
-    set.rs_ = rs_ & rs.rs_;
-    return set;
-  }
-
-  constexpr bool operator==(const PhyRegisterSet& rs) const {
-    return rs_ == rs.rs_;
-  }
-
-  constexpr bool Empty() const {
-    return rs_ == 0;
-  }
-
-  constexpr int count() const {
-    return std::popcount(rs_);
-  }
-
-  constexpr PhyLocation GetFirst() const {
-    return std::countr_zero(rs_);
-  }
-
-  constexpr PhyLocation GetLast() const {
-    return GetLastBit();
-  }
-
-  constexpr void RemoveFirst() {
-    rs_ &= (rs_ - 1);
-  }
-
-  constexpr void RemoveLast() {
-    rs_ &= ~(1U << GetLastBit());
-  }
-
-  constexpr void Set(PhyLocation reg) {
-    rs_ |= (1U << reg.loc);
-  }
-
-  constexpr void Reset(PhyLocation reg) {
-    rs_ &= ~(1U << reg.loc);
-  }
-
-  constexpr void ResetAll() {
-    rs_ = 0;
-  }
-
-  constexpr bool Has(PhyLocation reg) const {
-    return rs_ & (1U << reg.loc);
-  }
-
- private:
-  unsigned rs_{0};
-
-  constexpr int GetLastBit() const {
-    return (sizeof(rs_) * CHAR_BIT - 1) - std::countl_zero(rs_);
-  }
-};
+using PhyRegisterSet = RegisterSet<PhyLocation, unsigned>;
 
 template <size_t N>
 constexpr PhyRegisterSet makePhyRegisterSet(
