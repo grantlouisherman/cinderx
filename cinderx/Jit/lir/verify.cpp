@@ -20,6 +20,10 @@ bool verifyPostRegAllocInvariants(Function* func, std::ostream& err) {
         JIT_DCHECK(
             instr->getNumInputs() == 1, "Branch must have a single input.");
         auto operand = instr->getInput(0);
+        if (operand->isInd() || operand->isImm()) {
+          // Indirect or direct-address branch — no CFG successor to verify.
+          continue;
+        }
         JIT_DCHECK(
             operand->type() == OperandBase::kLabel,
             "Branch must jump to a label.");
