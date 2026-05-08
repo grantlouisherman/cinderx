@@ -1634,11 +1634,8 @@ Register* simplifyLoadAttrInstanceReceiver(
   return nullptr;
 }
 
-Register* simplifyLoadAttrTypeReceiver(
-    Env& env,
-    int name_idx,
-    Register* receiver,
-    FrameState* frame_state) {
+Register* simplifyLoadAttrTypeReceiver(Env& env, const LoadAttr* load_attr) {
+  Register* receiver = load_attr->GetOperand(0);
   if (!receiver->isA(TType)) {
     return nullptr;
   }
@@ -1656,22 +1653,10 @@ Register* simplifyLoadAttrTypeReceiver(
         return env.emit<LoadTypeAttrCacheEntryValue>(cache_id);
       },
       [&] { // Slow path
+        int name_idx = load_attr->name_idx();
         return env.emit<FillTypeAttrCache>(
-            receiver, name_idx, cache_id, *frame_state);
+            receiver, name_idx, cache_id, *load_attr->frameState());
       });
-}
-
-Register* simplifyLoadAttrCached(Env& env, const LoadAttrCached* load_attr) {
-  if (getConfig().attr_caches) {
-    if (Register* reg = simplifyLoadAttrTypeReceiver(
-            env,
-            load_attr->name_idx(),
-            load_attr->GetOperand(0),
-            load_attr->frameState())) {
-      return reg;
-    }
-  }
-  return nullptr;
 }
 
 Register* simplifyLoadAttr(Env& env, const LoadAttr* load_attr) {
@@ -1694,11 +1679,7 @@ Register* simplifyLoadAttr(Env& env, const LoadAttr* load_attr) {
           *load_attr->frameState());
     }
 
-    if (Register* reg = simplifyLoadAttrTypeReceiver(
-            env,
-            load_attr->name_idx(),
-            load_attr->GetOperand(0),
-            load_attr->frameState())) {
+    if (Register* reg = simplifyLoadAttrTypeReceiver(env, load_attr)) {
       return reg;
     }
     return env.emit<LoadAttrCached>(
@@ -2219,9 +2200,6 @@ Register* simplifyInstr(Env& env, const Instr* instr) {
 #ifndef Py_GIL_DISABLED
     case Opcode::kLoadAttr:
       return simplifyLoadAttr(env, static_cast<const LoadAttr*>(instr));
-    case Opcode::kLoadAttrCached:
-      return simplifyLoadAttrCached(
-          env, static_cast<const LoadAttrCached*>(instr));
 #endif
 // TODO(T255263721) - Enable this again. See P2169673579 and P2184559031.
 #ifndef Py_GIL_DISABLED
