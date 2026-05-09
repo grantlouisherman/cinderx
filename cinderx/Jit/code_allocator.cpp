@@ -13,6 +13,13 @@
 #include <sys/mman.h>
 #endif
 
+#ifdef __APPLE__
+#include <pthread.h>
+#ifdef __aarch64__
+#include <libkern/OSCacheControl.h>
+#endif
+#endif
+
 #include <cstring>
 
 namespace jit {
@@ -30,16 +37,37 @@ namespace {
 // 2MiB to match Linux's huge-page size.
 constexpr size_t kAllocSize = 1024 * 1024 * 2;
 
+// On macOS ARM64, MAP_JIT memory requires toggling between writable and
+// executable states per-thread via pthread_jit_write_protect_np.
+void jitEnableWriting() {
+#if defined(__APPLE__) && defined(__aarch64__)
+  pthread_jit_write_protect_np(0);
+#endif
+}
+
+void jitEnableExecuting(
+    [[maybe_unused]] void* addr,
+    [[maybe_unused]] size_t size,
+    [[maybe_unused]] void* cold_addr = nullptr,
+    [[maybe_unused]] size_t cold_size = 0) {
+#if defined(__APPLE__) && defined(__aarch64__)
+  pthread_jit_write_protect_np(1);
+  sys_icache_invalidate(addr, size);
+  if (cold_size > 0) {
+    sys_icache_invalidate(cold_addr, cold_size);
+  }
+#endif
+}
+
 // Allocate memory for JIT'd code.
 uint8_t* allocPages(size_t size) {
 #ifndef WIN32
-  void* res = mmap(
-      nullptr,
-      size,
-      PROT_EXEC | PROT_READ | PROT_WRITE,
-      MAP_PRIVATE | MAP_ANONYMOUS,
-      -1,
-      0);
+  int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+#ifdef __APPLE__
+  flags |= MAP_JIT;
+#endif
+  void* res =
+      mmap(nullptr, size, PROT_EXEC | PROT_READ | PROT_WRITE, flags, -1, 0);
   JIT_CHECK(
       res != MAP_FAILED,
       "Failed to allocate {} bytes of memory for code",
@@ -244,9 +272,11 @@ AllocateResult CodeAllocatorCinder::addSplitCode(asmjit::CodeHolder* code) {
   PROPAGATE_ERROR(code->relocateToBase(uintptr_t(hot_alloc_)));
 
   void* addr = hot_alloc_;
+  void* cold_addr = cold_alloc_;
 
   // Copy each section's data to the appropriate allocation.
   size_t total_size = 0;
+  jitEnableWriting();
   for (asmjit::Section* section : code->_sections) {
     size_t buffer_size = section->bufferSize();
     if (buffer_size == 0) {
@@ -264,6 +294,7 @@ AllocateResult CodeAllocatorCinder::addSplitCode(asmjit::CodeHolder* code) {
     }
     total_size += buffer_size;
   }
+  jitEnableExecuting(addr, hot_size, cold_addr, cold_size);
 
   used_bytes_.fetch_add(total_size, std::memory_order_relaxed);
   return AllocateResult{addr, asmjit::kErrorOk};
@@ -287,6 +318,7 @@ AllocateResult CodeAllocatorCinder::addCode(asmjit::CodeHolder* code) {
   size_t actual_code_size = code->codeSize();
   JIT_CHECK(actual_code_size <= max_code_size, "Code grew during relocation");
 
+  jitEnableWriting();
   for (asmjit::Section* section : code->_sections) {
     size_t offset = section->offset();
     size_t buffer_size = section->bufferSize();
@@ -305,6 +337,7 @@ AllocateResult CodeAllocatorCinder::addCode(asmjit::CodeHolder* code) {
   }
 
   void* addr = hot_alloc_;
+  jitEnableExecuting(addr, actual_code_size);
 
   hot_alloc_ += actual_code_size;
   hot_alloc_free_ -= actual_code_size;
