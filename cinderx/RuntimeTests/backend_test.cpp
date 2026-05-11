@@ -18,6 +18,7 @@
 #include "cinderx/RuntimeTests/fixtures.h"
 #include "cinderx/module_state.h"
 
+// NOLINTNEXTLINE(facebook-hte-BadInclude-regex)
 #include <regex>
 #include <sstream>
 
@@ -198,7 +199,8 @@ class BackendTest : public RuntimeTest {
     EXPECT_EQ(result.error, asmjit::kErrorOk);
     EXPECT_TRUE(code_allocator->contains(result.addr))
         << "Compiled function should exist within the CodeAllocator";
-    gen.lir_func_.release();
+    Function* caller_owned_lir_func = gen.lir_func_.release();
+    EXPECT_EQ(caller_owned_lir_func, lir_func);
     return result.addr;
   }
 
@@ -258,7 +260,8 @@ class BackendTest : public RuntimeTest {
 
     AllocateResult result = code_allocator->addCode(&code);
     EXPECT_EQ(result.error, asmjit::kErrorOk);
-    gen.lir_func_.release();
+    Function* caller_owned_lir_func = gen.lir_func_.release();
+    EXPECT_EQ(caller_owned_lir_func, lir_func);
     return result.addr;
   }
 #endif
@@ -815,6 +818,84 @@ TEST_F(BackendTest, MoveSequenceOpt2Test) {
   ASSERT_EQ((*(iter++))->opcode(), Instruction::kMove);
   ASSERT_EQ((*iter)->opcode(), Instruction::kAdd);
   ASSERT_EQ((*iter)->getInput(1)->type(), OperandBase::kStack);
+}
+
+TEST_F(BackendTest, MoveSequenceOptKeepsSharedSpillAliveAcrossSelfMove) {
+  auto lirfunc = std::make_unique<Function>();
+  auto bb = lirfunc->allocateBasicBlock();
+  auto epilogue = lirfunc->allocateBasicBlock();
+
+  const PhyLocation kSharedSlot{-16, 64};
+  const PhyLocation kSelfMoveReg = ARGUMENT_REGS[0];
+  constexpr uint64_t kExpected = 4;
+
+  // Seed the spill slot with a known stale value. If the optimizer later
+  // deletes the real spill by mistake, the final reload reads this zero and the
+  // test fails deterministically instead of depending on uninitialized stack
+  // contents.
+  bb->allocateInstr(
+      Instruction::kMove,
+      nullptr,
+      OutStk{kSharedSlot, OperandBase::k64bit},
+      Imm{0, OperandBase::k64bit});
+  bb->allocateInstr(
+      Instruction::kMove,
+      nullptr,
+      OutPhyReg{kSelfMoveReg, OperandBase::k64bit},
+      Imm{kExpected, OperandBase::k64bit});
+  bb->allocateInstr(
+      Instruction::kMove,
+      nullptr,
+      OutStk{kSharedSlot, OperandBase::k64bit},
+      PhyReg{kSelfMoveReg, OperandBase::k64bit});
+  // Reload the same spilled value back into the same physical register. Once
+  // the stack input is rewritten to use the remembered register directly, this
+  // instruction becomes `Move reg, reg` and is dropped later as a no-op.
+  auto self_move = bb->allocateInstr(
+      Instruction::kMove,
+      nullptr,
+      OutPhyReg{kSelfMoveReg, OperandBase::k64bit},
+      Stk{kSharedSlot, OperandBase::k64bit});
+  // Mark the stack operand as a last use to model the exact case that used to
+  // trigger spill deletion inside optimizeMoveSequence().
+  self_move->getInput(0)->setLastUse();
+  // A second reload still needs the shared spill slot after the self-move has
+  // been simplified away. That is what the old optimization missed.
+  bb->allocateInstr(
+      Instruction::kMove,
+      nullptr,
+      OutPhyReg{arch::reg_general_return_loc, OperandBase::k64bit},
+      Stk{kSharedSlot, OperandBase::k64bit});
+  bb->allocateInstr(Instruction::kReturn, nullptr);
+  bb->addSuccessor(epilogue);
+
+  auto func = reinterpret_cast<uint64_t (*)()>(SimpleCompile(lirfunc.get()));
+
+  bool saw_preserved_spill = false;
+  for (auto iter = bb->instructions().begin(); iter != bb->instructions().end();
+       ++iter) {
+    auto* instr = iter->get();
+    if (!instr->isMove()) {
+      continue;
+    }
+    auto* out = instr->output();
+    auto* in = instr->getInput(0);
+    if (out->isStack() && out->getStackSlot().loc == kSharedSlot.loc &&
+        in->isReg() && in->getPhyRegister() == kSelfMoveReg) {
+      saw_preserved_spill = true;
+      break;
+    }
+  }
+
+  // Check both the internal LIR shape and the final machine-code behavior.
+  // Before the fix, optimizeMoveSequence() treated the self-move's stack input
+  // as the last consumer of the spill, erased the defining store, and relied on
+  // the register value staying live. That was wrong because the later reload
+  // still legitimately reads the stack slot. Keeping the spill is safe: it only
+  // skips the deletion in the self-move case, where the move itself is about to
+  // disappear and therefore cannot serve as the final use of the spilled value.
+  EXPECT_TRUE(saw_preserved_spill);
+  EXPECT_EQ(func(), kExpected);
 }
 
 TEST_F(BackendTest, CastTest) {
