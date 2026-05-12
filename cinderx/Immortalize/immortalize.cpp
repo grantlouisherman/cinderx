@@ -31,12 +31,33 @@ bool can_immortalize(PyObject* obj) {
   return true;
 }
 
+static void immortalize_exact_dict_entries(PyObject* obj) {
+  PyObject* key;
+  PyObject* value;
+  Py_ssize_t pos = 0;
+  // PyDict_Next() can resolve lazy imports when values are requested. When
+  // lazy imports are enabled, heap immortalization must preserve them during
+  // prepare-for-fork.
+#ifdef ENABLE_LAZY_IMPORTS
+  while (_PyDict_NextKeepLazy(obj, &pos, &key, &value)) {
+#else
+  while (PyDict_Next(obj, &pos, &key, &value)) {
+#endif
+    immortalize(key);
+    immortalize(value);
+  }
+}
+
 bool immortalize(PyObject* obj) {
   if (!can_immortalize(obj)) {
     return false;
   }
 
   IMMORTALIZE(obj);
+
+  if (PyDict_CheckExact(obj)) {
+    immortalize_exact_dict_entries(obj);
+  }
 
   if (PyCode_Check(obj)) {
     BorrowedRef<PyCodeObject> code{obj};
