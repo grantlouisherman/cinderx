@@ -11,16 +11,15 @@ eagerly compile all functions on import, then reports per-function and
 aggregate timing statistics.
 
 Usage:
+    python benchmarks/compile_time.py
     buck run //cinderx/benchmarks:compile-time
-
-For a per-phase breakdown of each function's compilation, pass the jit-time
-flag via Python's -X option:
-    buck run //cinderx/benchmarks:compile-time -- -X jit-time='*'
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import sys
 
 import cinderx.jit
 
@@ -30,15 +29,14 @@ logger: logging.Logger = logging.getLogger(__name__)
 def main() -> None:
     cinderx.jit.compile_after_n_calls(0)
 
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
     # Importing these modules triggers JIT compilation of all their functions.
-    # These are bundled via srcs in the BUCK target, not as separate deps.
-    from cinderx.benchmarks import (  # noqa: F811  # @manual
-        binary_trees,
-        fannkuch,
-        nbody,
-        richards,
-        spectral_norm,
-    )
+    import binary_trees  # pyre-ignore[21]
+    import fannkuch  # pyre-ignore[21]
+    import nbody  # pyre-ignore[21]
+    import richards  # pyre-ignore[21]
+    import spectral_norm  # pyre-ignore[21]
 
     # Suppress unused import warnings.
     _ = (binary_trees, fannkuch, nbody, richards, spectral_norm)
