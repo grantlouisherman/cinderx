@@ -100,3 +100,13 @@ individual function if you suspect that a specific function is problematic.
 If you run the test with PYTHONJITDUMPASM=1 you can see the assembly dumped
 along with the HIR to understand what the compiled code looks like and what
 the underlying issue is.
+
+## Code style
+
+In C++ code avoid use of `auto`-typed variables. `auto` should be reserved for:
+* Not using it is impossible. e.g. assigning a lambda expression to a variable.
+* The expression type is explicit on the RHS. E.g. `auto x = static_cast<...>(...)`.
+  (DO NOT use explicit casts deliberately to allow `auto`).
+* When dealing with things like STL collections where the full type is so large
+  it obscures the meaning of the code. E.g. iterators, use in range-based
+  for-loops, structured bindings, etc.
