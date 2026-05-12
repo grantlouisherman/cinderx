@@ -201,16 +201,6 @@ FOREACH_VECD(DEFINE_PHY_VECD_REG)
 
 using PhyRegisterSet = RegisterSet<PhyLocation, unsigned>;
 
-template <size_t N>
-constexpr PhyRegisterSet makePhyRegisterSet(
-    const std::array<PhyLocation, N>& regs) {
-  PhyRegisterSet set;
-  for (PhyLocation reg : regs) {
-    set.Set(reg);
-  }
-  return set;
-}
-
 #define ADD_REG(v, ...) | PhyLocation::v
 constexpr PhyRegisterSet ALL_GP_REGISTERS =
     PhyRegisterSet() FOREACH_GP(ADD_REG);
@@ -233,7 +223,7 @@ constexpr auto CALLER_SAVE_GP_REGS =
     std::to_array({RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11});
 
 constexpr PhyRegisterSet CALLER_SAVE_REGS =
-    makePhyRegisterSet(CALLER_SAVE_GP_REGS) | ALL_VECD_REGISTERS;
+    PhyRegisterSet(CALLER_SAVE_GP_REGS) | ALL_VECD_REGISTERS;
 #endif
 
 constexpr PhyRegisterSet CALLEE_SAVE_REGS = INIT_REGISTERS - CALLER_SAVE_REGS;

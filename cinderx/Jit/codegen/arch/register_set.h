@@ -5,6 +5,7 @@
 #include <bit>
 #include <climits>
 #include <concepts>
+#include <span>
 
 namespace jit::codegen {
 
@@ -13,6 +14,11 @@ class RegisterSet {
  public:
   constexpr RegisterSet() = default;
   explicit constexpr RegisterSet(PhyLocationType reg) : rs_{BitAt(reg.loc)} {}
+  explicit constexpr RegisterSet(std::span<const PhyLocationType> regs) {
+    for (auto reg : regs) {
+      rs_ |= BitAt(reg.loc);
+    }
+  }
 
   constexpr RegisterSet operator|(PhyLocationType reg) const {
     RegisterSet set;
