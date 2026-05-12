@@ -339,7 +339,7 @@ class StrictLoaderTest(StrictTestBase):
             # pyrefly: ignore [missing-attribute]
             self.assertEqual(a.f(), 42)
 
-    @skip_unless_lazy_imports
+    @skip_unless_lazy_imports()
     def test_with_lazy_imports_failed_invoke(self) -> None:
         # pyre-ignore[16]: no such attribute
         enabled = importlib.is_lazy_imports_enabled()
@@ -2282,7 +2282,7 @@ class StrictLoaderTest(StrictTestBase):
         with self.assertRaises(SyntaxError):
             self.sbx.strict_import("b")
 
-    @skip_unless_lazy_imports
+    @skip_unless_lazy_imports()
     def test_strict_loader_lazy_imports_cycle(self) -> None:
         self.sbx.write_file(
             "main.py",
@@ -2472,7 +2472,7 @@ class StrictLoaderTest(StrictTestBase):
             # old version of the C class from the failed import
             self.assertIs(other.f(c), c)
 
-    @skip_unless_lazy_imports
+    @skip_unless_lazy_imports()
     def test_strict_lazy_import_cycle(self):
         self.sbx.write_file(
             "mod/__init__.py",
