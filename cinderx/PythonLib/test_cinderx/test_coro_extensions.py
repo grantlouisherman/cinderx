@@ -6,12 +6,20 @@ import types
 import unittest
 from collections.abc import AsyncGenerator, Callable, Coroutine, Generator, Iterator
 
-from cinderx.test_support import hasCinderX, passIf, skip_if_jit, skip_module_if_oss
+from cinderx.test_support import hasCinderX, passIf, skip_if_jit, is_oss
 
-skip_module_if_oss()
 
-# pyre-ignore[21]: can't find test.support
-from test.support import import_helper, maybe_get_event_loop_policy
+
+if is_oss():
+    import importlib
+    import asyncio.events
+    def event_policy_wrapper():
+        return  asyncio.events._event_loop_policy  
+    maybe_get_event_loop_policy = event_policy_wrapper
+    import_helper = importlib
+else:
+    # pyre-ignore[21]: can't find test.support
+    from test.support import import_helper, maybe_get_event_loop_policy
 
 
 if hasCinderX():
